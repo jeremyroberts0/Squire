@@ -241,16 +241,6 @@ var keyHandlers = {
         range = self._createRange( nodeAfterSplit, 0 );
         self.setSelection( range );
         self._updatePath( range, true );
-
-        // Scroll into view
-        if ( nodeAfterSplit.nodeType === TEXT_NODE ) {
-            nodeAfterSplit = nodeAfterSplit.parentNode;
-        }
-        // 16 ~ one standard line height in px.
-        if ( nodeAfterSplit.getBoundingClientRect().top + 16 >
-                self._doc.documentElement.clientHeight ) {
-            nodeAfterSplit.scrollIntoView( false );
-        }
     },
     backspace: function ( self, event, range ) {
         self._removeZWS();
@@ -396,6 +386,18 @@ var keyHandlers = {
             }
         }
     },
+    'shift-tab': function ( self, event, range ) {
+        self._removeZWS();
+        // If no selection and at start of block
+        if ( range.collapsed && rangeDoesStartAtBlockBoundary( range ) ) {
+            // Break list
+            var node = range.startContainer;
+            if ( getNearest( node, 'UL' ) || getNearest( node, 'OL' ) ) {
+                event.preventDefault();
+                self.modifyBlocks( decreaseListLevel, range );
+            }
+        }
+    },
     space: function ( self, _, range ) {
         var node, parent;
         self._recordUndoState( range );
@@ -422,18 +424,24 @@ var keyHandlers = {
     }
 };
 
-// Firefox incorrectly handles Cmd-left/Cmd-right on Mac:
+// Firefox pre v29 incorrectly handles Cmd-left/Cmd-right on Mac:
 // it goes back/forward in history! Override to do the right
 // thing.
 // https://bugzilla.mozilla.org/show_bug.cgi?id=289384
-if ( isMac && isGecko && win.getSelection().modify ) {
+if ( isMac && isGecko ) {
     keyHandlers[ 'meta-left' ] = function ( self, event ) {
         event.preventDefault();
-        self._sel.modify( 'move', 'backward', 'lineboundary' );
+        var sel = getWindowSelection( self );
+        if ( sel && sel.modify ) {
+            sel.modify( 'move', 'backward', 'lineboundary' );
+        }
     };
     keyHandlers[ 'meta-right' ] = function ( self, event ) {
         event.preventDefault();
-        self._sel.modify( 'move', 'forward', 'lineboundary' );
+        var sel = getWindowSelection( self );
+        if ( sel && sel.modify ) {
+            sel.modify( 'move', 'forward', 'lineboundary' );
+        }
     };
 }
 

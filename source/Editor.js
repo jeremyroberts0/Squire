@@ -309,6 +309,33 @@ proto._createRange =
     return domRange;
 };
 
+proto.scrollRangeIntoView = function ( range ) {
+    // Get the bounding rect
+    var rect = range.getBoundingClientRect();
+    var node, parent;
+    if ( !rect.top ) {
+        node = this._doc.createElement( 'SPAN' );
+        range = range.cloneRange();
+        insertNodeInRange( range, node );
+        rect = node.getBoundingClientRect();
+        parent = node.parentNode;
+        parent.removeChild( node );
+        parent.normalize();
+    }
+    // Then check and scroll
+    var win = this._win;
+    var height = win.innerHeight;
+    var top = rect.top;
+    if ( top > height ) {
+        win.scrollBy( 0, top - height + 20 );
+    }
+    // And fire event for integrations to use
+    this.fireEvent( 'scrollPointIntoView', {
+        x: rect.left,
+        y: top
+    });
+};
+
 proto._moveCursorTo = function ( toStart ) {
     var body = this._body,
         range = this._createRange( body, toStart ? 0 : body.childNodes.length );
@@ -323,6 +350,10 @@ proto.moveCursorToEnd = function () {
     return this._moveCursorTo( false );
 };
 
+var getWindowSelection = function ( self ) {
+    return self._win.getSelection() || null;
+};
+
 proto.setSelection = function ( range ) {
     if ( range ) {
         // iOS bug: if you don't focus the iframe before setting the
@@ -332,21 +363,18 @@ proto.setSelection = function ( range ) {
         if ( isIOS ) {
             this._win.focus();
         }
-        var sel = this._getWindowSelection();
+        var sel = getWindowSelection( this );
         if ( sel ) {
             sel.removeAllRanges();
             sel.addRange( range );
+            this.scrollRangeIntoView( range );
         }
     }
     return this;
 };
 
-proto._getWindowSelection = function () {
-    return this._win.getSelection() || null;
-};
-
 proto.getSelection = function () {
-    var sel = this._getWindowSelection(),
+    var sel = getWindowSelection( this ),
         selection, startContainer, endContainer;
     if ( sel && sel.rangeCount ) {
         selection  = sel.getRangeAt( 0 ).cloneRange();
@@ -433,6 +461,7 @@ var removeZWS = function ( root ) {
                     parent = node.parentNode;
                     parent.removeChild( node );
                     node = parent;
+                    walker.currentNode = parent;
                 } while ( isInline( node ) && !getLength( node ) );
                 break;
             } else {
@@ -741,10 +770,13 @@ proto.hasFormat = function ( tag, attributes, range ) {
 // holding the cursor. If there's a selection, returns an empty object.
 proto.getFontInfo = function ( range ) {
     var fontInfo = {
-            family: undefined,
-            size: undefined
-        },
-        element, style;
+        color: undefined,
+        backgroundColor: undefined,
+        family: undefined,
+        size: undefined
+    };
+    var seenAttributes = 0;
+    var element, style, attr;
 
     if ( !range && !( range = this.getSelection() ) ) {
         return fontInfo;
@@ -755,13 +787,23 @@ proto.getFontInfo = function ( range ) {
         if ( element.nodeType === TEXT_NODE ) {
             element = element.parentNode;
         }
-        while ( !( fontInfo.family && fontInfo.size ) &&
-                element && ( style = element.style ) ) {
-            if ( !fontInfo.family ) {
-                fontInfo.family = style.fontFamily;
+        while ( seenAttributes < 4 && element && ( style = element.style ) ) {
+            if ( !fontInfo.color && ( attr = style.color ) ) {
+                fontInfo.color = attr;
+                seenAttributes += 1;
             }
-            if ( !fontInfo.size ) {
-                fontInfo.size = style.fontSize;
+            if ( !fontInfo.backgroundColor &&
+                    ( attr = style.backgroundColor ) ) {
+                fontInfo.backgroundColor = attr;
+                seenAttributes += 1;
+            }
+            if ( !fontInfo.family && ( attr = style.fontFamily ) ) {
+                fontInfo.family = attr;
+                seenAttributes += 1;
+            }
+            if ( !fontInfo.size && ( attr = style.fontSize ) ) {
+                fontInfo.size = attr;
+                seenAttributes += 1;
             }
             element = element.parentNode;
         }
@@ -1544,14 +1586,18 @@ proto.insertHTML = function ( html, isPaste ) {
 
 proto.insertPlainText = function ( plainText, isPaste ) {
     var lines = plainText.split( '\n' ),
-        i, l;
-    for ( i = 1, l = lines.length - 1; i < l; i += 1 ) {
-        lines[i] = '<DIV>' +
-            lines[i].split( '&' ).join( '&amp;' )
-                    .split( '<' ).join( '&lt;'  )
-                    .split( '>' ).join( '&gt;'  )
-                    .replace( / (?= )/g, '&nbsp;' ) +
-        '</DIV>';
+        i, l, line;
+    for ( i = 0, l = lines.length; i < l; i += 1 ) {
+        line = lines[i];
+        line = line.split( '&' ).join( '&amp;' )
+                   .split( '<' ).join( '&lt;'  )
+                   .split( '>' ).join( '&gt;'  )
+                   .replace( / (?= )/g, '&nbsp;' );
+        // Wrap all but first/last lines in <div></div>
+        if ( i && i + 1 < l ) {
+            line = '<DIV>' + ( line || '<BR>' ) + '</DIV>';
+        }
+        lines[i] = line;
     }
     return this.insertHTML( lines.join( '' ), isPaste );
 };
@@ -1657,7 +1703,7 @@ proto.setTextColour = function ( colour ) {
         tag: 'SPAN',
         attributes: {
             'class': 'colour',
-            style: 'color: ' + colour
+            style: 'color:' + colour
         }
     }, {
         tag: 'SPAN',
@@ -1671,7 +1717,7 @@ proto.setHighlightColour = function ( colour ) {
         tag: 'SPAN',
         attributes: {
             'class': 'highlight',
-            style: 'background-color: ' + colour
+            style: 'background-color:' + colour
         }
     }, {
         tag: 'SPAN',
