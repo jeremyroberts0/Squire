@@ -364,7 +364,7 @@ proto.setSelection = function ( range ) {
             this._win.focus();
         }
         var sel = getWindowSelection( this );
-        if ( sel ) {
+        ﻿if (sel && sel.rangeCount > 0 && sel.getRangeAt(0).getClientRects().length > 0) {
             sel.removeAllRanges();
             sel.addRange( range );
             this.scrollRangeIntoView( range );
