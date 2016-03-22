@@ -3548,6 +3548,26 @@ proto.setHTML = function ( html ) {
         body.removeChild( child );
     }
 
+    // Listen for image load
+    var self = this;
+    function emitImgLoadEvent(img, loadEvent) {
+        self.fireEvent(loadEvent);
+    }
+    var imgs = frag.querySelectorAll('img');
+    for (var imgIndex in imgs) {
+        if (imgs.hasOwnProperty(imgIndex)) {
+            if (imgs[imgIndex] && imgs[imgIndex].complete) {
+                emitImgLoadEvent(imgs[imgIndex], new Event('load', {
+                    target: imgs[imgIndex]
+                })); // Synthesize the event if its already loaded
+            } else {
+                imgs[imgIndex].addEventListener('load', function(loadEvent){
+                    emitImgLoadEvent(imgs[imgIndex], loadEvent);
+                });
+            }
+        }
+    }
+
     // And insert new content
     body.appendChild( frag );
     fixCursor( body );
